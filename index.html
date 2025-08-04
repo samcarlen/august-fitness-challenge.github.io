@@ -268,10 +268,56 @@
             color: #667eea;
         }
         
-        .mini-stat-label {
-            font-size: 0.8rem;
-            color: #666;
-            margin-top: 5px;
+        .btn-edit, .btn-delete {
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .btn-edit:hover {
+            background-color: #e3f2fd;
+        }
+        
+        .btn-delete:hover {
+            background-color: #ffebee;
+        }
+        
+        .edit-form {
+            background: #f0f8ff;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        
+        .edit-form input, .edit-form select {
+            margin: 5px 0;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 100%;
+        }
+        
+        .edit-form button {
+            margin: 5px 5px 5px 0;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .btn-save {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
         }
     </style>
 </head>
@@ -412,10 +458,9 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
     <script>
-        console.log('Script loaded');
-        
+        // Global variables and configuration
         const POINTS_CONFIG = {
             steps: { rate: 0.05, unit: 'steps', icon: '👣', name: 'Steps' },
             walk_run: { rate: 100, unit: 'miles', icon: '🏃‍♂️', name: 'Walking/Running' },
@@ -428,7 +473,32 @@
         let selectedDate = new Date().toISOString().split('T')[0];
         let viewMode = 'today';
         let currentChart = null;
+        let currentEditId = null;
+
+        // Utility functions
+        function calculatePoints(type, amount) {
+            return Math.round(amount * POINTS_CONFIG[type].rate * 100) / 100;
+        }
         
+        function getTodaysActivities() {
+            const today = new Date().toISOString().split('T')[0];
+            return allActivities.filter(activity => activity.date === today);
+        }
+        
+        function getActivitiesForDate(date) {
+            return allActivities.filter(activity => activity.date === date);
+        }
+        
+        function getTotalPointsForDate(date) {
+            return getActivitiesForDate(date).reduce((sum, activity) => sum + activity.points, 0);
+        }
+        
+        function getAllDatesWithActivities() {
+            const dates = [...new Set(allActivities.map(activity => activity.date))];
+            return dates.sort((a, b) => new Date(b) - new Date(a));
+        }
+
+        // Data persistence
         function saveToLocalStorage() {
             try {
                 localStorage.setItem('augustFitnessChallenge_activities', JSON.stringify(allActivities));
@@ -452,29 +522,8 @@
                 allActivities = [];
             }
         }
-        
-        function calculatePoints(type, amount) {
-            return Math.round(amount * POINTS_CONFIG[type].rate * 100) / 100;
-        }
-        
-        function getTodaysActivities() {
-            const today = new Date().toISOString().split('T')[0];
-            return allActivities.filter(activity => activity.date === today);
-        }
-        
-        function getActivitiesForDate(date) {
-            return allActivities.filter(activity => activity.date === date);
-        }
-        
-        function getTotalPointsForDate(date) {
-            return getActivitiesForDate(date).reduce((sum, activity) => sum + activity.points, 0);
-        }
-        
-        function getAllDatesWithActivities() {
-            const dates = [...new Set(allActivities.map(activity => activity.date))];
-            return dates.sort((a, b) => new Date(b) - new Date(a));
-        }
-        
+
+        // UI update functions
         function updateStats() {
             const todaysActivities = getTodaysActivities();
             const totalPoints = todaysActivities.reduce((sum, activity) => sum + activity.points, 0);
@@ -509,6 +558,57 @@
             setTimeout(() => {
                 alert.classList.remove('show');
             }, 3000);
+        }
+
+        // Activity rendering
+        function createActivityHTML(activity) {
+            const timeDisplay = activity.timestamp || activity.time || '';
+            
+            if (String(currentEditId) === String(activity.id)) {
+                return createEditForm(activity);
+            }
+            
+            return `
+                <div class="activity-item" data-activity-id="${activity.id}">
+                    <div class="activity-info">
+                        <div class="activity-type">
+                            ${POINTS_CONFIG[activity.type].icon} ${POINTS_CONFIG[activity.type].name}
+                        </div>
+                        <div class="activity-details">
+                            ${activity.amount} ${POINTS_CONFIG[activity.type].unit} ${timeDisplay ? `• ${timeDisplay}` : ''}
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="activity-points">
+                            +${Math.round(activity.points)} pts
+                        </div>
+                        <button class="btn-edit" onclick="editActivity('${activity.id}')" title="Edit">✏️</button>
+                        <button class="btn-delete" onclick="deleteActivity('${activity.id}')" title="Delete">🗑️</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function createEditForm(activity) {
+            return `
+                <div class="edit-form" data-activity-id="${activity.id}">
+                    <h4>✏️ Edit Activity</h4>
+                    <div style="display: grid; gap: 10px;">
+                        <input type="date" id="edit-date-${activity.id}" value="${activity.date}">
+                        <select id="edit-type-${activity.id}">
+                            <option value="steps" ${activity.type === 'steps' ? 'selected' : ''}>Steps</option>
+                            <option value="walk_run" ${activity.type === 'walk_run' ? 'selected' : ''}>Walking/Running (miles)</option>
+                            <option value="cycling" ${activity.type === 'cycling' ? 'selected' : ''}>Cycling (miles)</option>
+                            <option value="exercise" ${activity.type === 'exercise' ? 'selected' : ''}>Exercise (minutes)</option>
+                        </select>
+                        <input type="number" id="edit-amount-${activity.id}" value="${activity.amount}" min="0" step="0.1" placeholder="Amount">
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn-save" onclick="saveActivityEdit('${activity.id}')">💾 Save</button>
+                            <button class="btn-cancel" onclick="cancelEdit()">❌ Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
         
         function renderActivities() {
@@ -567,34 +667,12 @@
                 listElement.innerHTML = activitiesToShow.map(activity => createActivityHTML(activity)).join('');
             }
         }
-        
-        function createActivityHTML(activity) {
-            const timeDisplay = activity.timestamp || activity.time || '';
-            return `
-                <div class="activity-item">
-                    <div class="activity-info">
-                        <div class="activity-type">
-                            ${POINTS_CONFIG[activity.type].icon} ${POINTS_CONFIG[activity.type].name}
-                        </div>
-                        <div class="activity-details">
-                            ${activity.amount} ${POINTS_CONFIG[activity.type].unit} ${timeDisplay ? `• ${timeDisplay}` : ''}
-                        </div>
-                    </div>
-                    <div class="activity-points">
-                        +${Math.round(activity.points)} pts
-                    </div>
-                </div>
-            `;
-        }
-        
+
+        // Main action functions
         function addActivity() {
-            console.log('addActivity function called');
-            
             const activityDate = document.getElementById('activityDate').value;
             const type = document.getElementById('activityType').value;
             const amount = parseFloat(document.getElementById('amount').value);
-            
-            console.log('Values:', { activityDate, type, amount });
             
             if (!activityDate) {
                 showAlert('Please select a date.', 'warning');
@@ -628,14 +706,11 @@
                 points,
                 date: activityDate,
                 timestamp: new Date().toLocaleTimeString(),
-                id: Date.now()
+                id: Date.now() + Math.random()
             };
             
             allActivities.push(newActivity);
-            console.log('Activity added. Total activities:', allActivities.length);
-            
             saveToLocalStorage();
-            
             updateStats();
             updateHistoricalStats();
             renderActivities();
@@ -651,6 +726,226 @@
             }
         }
         
+        function editActivity(activityId) {
+            console.log('Editing activity:', activityId);
+            
+            if (currentEditId) {
+                cancelEdit();
+            }
+            currentEditId = String(activityId);
+            renderActivities();
+        }
+        
+        function cancelEdit() {
+            currentEditId = null;
+            renderActivities();
+        }
+        
+        function saveActivityEdit(activityId) {
+            const editDate = document.getElementById(`edit-date-${activityId}`);
+            const editType = document.getElementById(`edit-type-${activityId}`);
+            const editAmount = document.getElementById(`edit-amount-${activityId}`);
+            
+            if (!editDate || !editType || !editAmount) {
+                showAlert('Edit form elements not found.', 'warning');
+                return;
+            }
+            
+            const editDateValue = editDate.value;
+            const editTypeValue = editType.value;
+            const editAmountValue = parseFloat(editAmount.value);
+            
+            if (!editDateValue || !editTypeValue || !editAmountValue || editAmountValue <= 0) {
+                showAlert('Please fill in all fields with valid values.', 'warning');
+                return;
+            }
+            
+            const activityIndex = allActivities.findIndex(a => String(a.id) === String(activityId));
+            if (activityIndex === -1) {
+                showAlert('Activity not found.', 'warning');
+                return;
+            }
+            
+            const originalActivity = allActivities[activityIndex];
+            const dayPointsWithoutOriginal = getTotalPointsForDate(editDateValue) - (originalActivity.date === editDateValue ? originalActivity.points : 0);
+            const newPoints = calculatePoints(editTypeValue, editAmountValue);
+            const newTotal = dayPointsWithoutOriginal + newPoints;
+            
+            if (newTotal > DAILY_MAX) {
+                const maxAmount = (DAILY_MAX - dayPointsWithoutOriginal) / POINTS_CONFIG[editTypeValue].rate;
+                const dateStr = new Date(editDateValue + 'T00:00:00').toLocaleDateString();
+                showAlert(`This would exceed the daily maximum for ${dateStr}. You can add up to ${maxAmount.toFixed(2)} ${POINTS_CONFIG[editTypeValue].unit} for that day.`, 'warning');
+                return;
+            }
+            
+            allActivities[activityIndex] = {
+                ...originalActivity,
+                date: editDateValue,
+                type: editTypeValue,
+                amount: editAmountValue,
+                points: newPoints
+            };
+            
+            currentEditId = null;
+            saveToLocalStorage();
+            updateStats();
+            updateHistoricalStats();
+            renderActivities();
+            showAlert('✅ Activity updated successfully!');
+        }
+        
+        function deleteActivity(activityId) {
+            console.log('deleteActivity function called with ID:', activityId, typeof activityId);
+            console.log('Current activities:', allActivities.map(a => `ID: ${a.id} (${typeof a.id}), Type: ${a.type}, Points: ${a.points}`));
+            
+            // Create custom confirmation dialog
+            showCustomConfirm(
+                'Delete Activity', 
+                'Are you sure you want to permanently delete this activity?',
+                () => {
+                    // User clicked YES - proceed with deletion
+                    console.log('🚀 User confirmed deletion - PROCEEDING');
+                    proceedWithDeletion(activityId);
+                },
+                () => {
+                    // User clicked NO - cancel deletion
+                    console.log('❌ User cancelled deletion');
+                    showAlert('Deletion cancelled.', 'warning');
+                }
+            );
+        }
+        
+        function proceedWithDeletion(activityId) {
+            console.log('🚀 PROCEEDING WITH DELETION of ID:', activityId);
+            
+            const activityIndex = allActivities.findIndex(activity => {
+                const match = String(activity.id) === String(activityId);
+                console.log(`Comparing activity ID "${activity.id}" with target "${activityId}": ${match}`);
+                return match;
+            });
+            
+            console.log('Found activity at index:', activityIndex);
+            
+            if (activityIndex > -1) {
+                const deletedActivity = allActivities[activityIndex];
+                console.log('🗑️ DELETING ACTIVITY:', deletedActivity);
+                
+                allActivities.splice(activityIndex, 1);
+                console.log('✅ Activity deleted successfully. Remaining activities:', allActivities.length);
+                
+                if (String(currentEditId) === String(activityId)) {
+                    currentEditId = null;
+                }
+                
+                saveToLocalStorage();
+                updateStats();
+                updateHistoricalStats();
+                renderActivities();
+                showAlert(`🗑️ Successfully deleted ${POINTS_CONFIG[deletedActivity.type].name} activity (${Math.round(deletedActivity.points)} points)`);
+            } else {
+                console.error('❌ Activity not found for deletion. Target ID:', activityId);
+                console.error('Available IDs:', allActivities.map(a => a.id));
+                showAlert('Activity not found for deletion.', 'warning');
+            }
+        }
+        
+        function showCustomConfirm(title, message, onYes, onNo) {
+            // Remove any existing modal
+            const existing = document.getElementById('customConfirmModal');
+            if (existing) {
+                existing.remove();
+            }
+            
+            // Create modal HTML
+            const modal = document.createElement('div');
+            modal.id = 'customConfirmModal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 10000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="
+                    background: white;
+                    padding: 30px;
+                    border-radius: 15px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    max-width: 400px;
+                    text-align: center;
+                ">
+                    <h3 style="margin-bottom: 15px; color: #333;">${title}</h3>
+                    <p style="margin-bottom: 25px; color: #666; line-height: 1.4;">${message}</p>
+                    <div style="display: flex; gap: 15px; justify-content: center;">
+                        <button id="confirmYes" style="
+                            background: #dc3545;
+                            color: white;
+                            border: none;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: transform 0.2s ease;
+                        ">🗑️ Delete</button>
+                        <button id="confirmNo" style="
+                            background: #6c757d;
+                            color: white;
+                            border: none;
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: transform 0.2s ease;
+                        ">❌ Cancel</button>
+                    </div>
+                </div>
+            `;
+            
+            // Add event listeners
+            const yesBtn = modal.querySelector('#confirmYes');
+            const noBtn = modal.querySelector('#confirmNo');
+            
+            yesBtn.onclick = () => {
+                modal.remove();
+                onYes();
+            };
+            
+            noBtn.onclick = () => {
+                modal.remove();
+                onNo();
+            };
+            
+            // Close on background click
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    onNo();
+                }
+            };
+            
+            // Add to page
+            document.body.appendChild(modal);
+            
+            // Focus the cancel button by default
+            noBtn.focus();
+        }
+
+        // Test function to make sure our functions are accessible
+        function testDelete() {
+            console.log('Test delete function called');
+            alert('Test function works!');
+        }
+
+        // View management functions
         function changeSelectedDate() {
             selectedDate = document.getElementById('dateSelect').value;
             viewMode = 'selected';
@@ -661,6 +956,7 @@
         
         function showToday() {
             viewMode = 'today';
+            currentEditId = null;
             document.getElementById('dateSelect').value = '';
             document.getElementById('clearDateBtn').style.display = 'none';
             renderActivities();
@@ -668,6 +964,7 @@
         
         function showAllDays() {
             viewMode = 'all';
+            currentEditId = null;
             document.getElementById('dateSelect').value = '';
             document.getElementById('clearDateBtn').style.display = 'none';
             renderActivities();
@@ -676,11 +973,13 @@
         function clearSelectedDate() {
             selectedDate = new Date().toISOString().split('T')[0];
             viewMode = 'today';
+            currentEditId = null;
             document.getElementById('dateSelect').value = '';
             document.getElementById('clearDateBtn').style.display = 'none';
             renderActivities();
         }
-        
+
+        // Data import/export functions
         function exportCSV() {
             if (allActivities.length === 0) {
                 showAlert('No activities to export!', 'warning');
@@ -745,7 +1044,7 @@
                                 amount: parseFloat(values[2]),
                                 points: parseFloat(values[4]),
                                 timestamp: values[5] || '',
-                                id: Date.now() + i
+                                id: Date.now() + i + Math.random()
                             };
                             
                             const exists = allActivities.some(existing => 
@@ -762,7 +1061,6 @@
                     }
                     
                     saveToLocalStorage();
-                    
                     updateStats();
                     updateHistoricalStats();
                     renderActivities();
@@ -776,8 +1074,16 @@
             reader.readAsText(file);
             event.target.value = '';
         }
-        
+
+        // Chart functions
         function showChart(type) {
+            // Wait a bit more for Chart.js to load
+            if (typeof Chart === 'undefined') {
+                console.log('Chart.js still loading, retrying...');
+                setTimeout(() => showChart(type), 1000);
+                return;
+            }
+            
             document.getElementById('dailyChartBtn').style.background = type === 'daily' ? '#667eea' : '#6c757d';
             document.getElementById('activityChartBtn').style.background = type === 'activity' ? '#667eea' : '#6c757d';
             document.getElementById('trendChartBtn').style.background = type === 'trend' ? '#667eea' : '#6c757d';
@@ -788,12 +1094,23 @@
             
             const ctx = document.getElementById('activityChart').getContext('2d');
             
-            if (type === 'daily') {
-                createDailyPointsChart(ctx);
-            } else if (type === 'activity') {
-                createActivityBreakdownChart(ctx);
-            } else if (type === 'trend') {
-                createTrendChart(ctx);
+            try {
+                if (type === 'daily') {
+                    createDailyPointsChart(ctx);
+                } else if (type === 'activity') {
+                    createActivityBreakdownChart(ctx);
+                } else if (type === 'trend') {
+                    createTrendChart(ctx);
+                }
+            } catch (error) {
+                console.error('Chart creation error:', error);
+                document.getElementById('chartContainer').innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #666;">
+                        <h3>📊 Chart Error</h3>
+                        <p>Unable to create chart. Please try refreshing the page.</p>
+                        <button class="btn-secondary" onclick="location.reload()">🔄 Refresh Page</button>
+                    </div>
+                `;
             }
         }
         
@@ -959,7 +1276,8 @@
                 }
             });
         }
-        
+
+        // Initialize the application
         window.onload = function() {
             console.log('Page loaded, initializing...');
             
@@ -973,7 +1291,28 @@
             updateStats();
             updateHistoricalStats();
             renderActivities();
-            showChart('daily');
+            
+            // Wait for Chart.js to load, then initialize charts
+            function tryLoadCharts(attempts = 0) {
+                if (typeof Chart !== 'undefined') {
+                    console.log('Chart.js loaded successfully, initializing charts...');
+                    showChart('daily');
+                } else if (attempts < 10) {
+                    console.log(`Chart.js not ready yet, attempt ${attempts + 1}/10`);
+                    setTimeout(() => tryLoadCharts(attempts + 1), 500);
+                } else {
+                    console.error('Chart.js failed to load after multiple attempts');
+                    document.getElementById('chartContainer').innerHTML = `
+                        <div style="text-align: center; padding: 40px; color: #666;">
+                            <h3>📊 Charts Unavailable</h3>
+                            <p>Charts couldn't load from CDN. All other features work normally.</p>
+                            <button class="btn-secondary" onclick="location.reload()">🔄 Retry Loading Charts</button>
+                        </div>
+                    `;
+                }
+            }
+            
+            tryLoadCharts();
         };
     </script>
 </body>
